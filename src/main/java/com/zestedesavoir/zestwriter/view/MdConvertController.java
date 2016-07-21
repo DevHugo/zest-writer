@@ -6,20 +6,15 @@ import com.zestedesavoir.zestwriter.utils.Configuration;
 import com.zestedesavoir.zestwriter.utils.Corrector;
 import com.zestedesavoir.zestwriter.utils.FlipTable;
 import com.zestedesavoir.zestwriter.utils.readability.Readability;
-import com.zestedesavoir.zestwriter.view.com.CustomFXMLLoader;
-import com.zestedesavoir.zestwriter.view.com.CustomStyledClassedTextArea;
-import com.zestedesavoir.zestwriter.view.com.FunctionTreeFactory;
-import com.zestedesavoir.zestwriter.view.com.IconFactory;
+import com.zestedesavoir.zestwriter.view.com.*;
 import com.zestedesavoir.zestwriter.view.dialogs.FindReplaceDialog;
 import com.zestedesavoir.zestwriter.view.dialogs.ImageInputDialog;
 import javafx.application.Platform;
 import javafx.beans.property.BooleanPropertyBase;
-import javafx.beans.property.IntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.ObservableList;
-import javafx.concurrent.ScheduledService;
 import javafx.concurrent.Service;
 import javafx.concurrent.Task;
 import javafx.concurrent.Worker.State;
@@ -27,16 +22,14 @@ import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
-import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
-import javafx.scene.layout.*;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
-import javafx.stage.Modality;
 import javafx.stage.Stage;
-import javafx.util.Duration;
 import javafx.util.Pair;
 import netscape.javascript.JSException;
 import org.apache.commons.lang.StringEscapeUtils;
@@ -53,7 +46,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -64,7 +56,6 @@ import static org.fxmisc.wellbehaved.event.EventPattern.keyReleased;
 
 public class MdConvertController {
     private MainApp mainApp;
-    private Configuration config;
     private MdTextController mdBox;
     private Tab tab;
     private Textual extract;
@@ -75,7 +66,6 @@ public class MdConvertController {
     private int yRenderPosition = 0;
     private StringProperty countChars = new SimpleStringProperty();
     private StringProperty countWords = new SimpleStringProperty();
-    private final static String loadString="<p>"+Configuration.bundle.getString("ui.task.load")+" ...</p>";
     private BooleanPropertyBase isSaved = new BooleanPropertyBase(true) {
 
         @Override
@@ -91,10 +81,8 @@ public class MdConvertController {
 
     @FXML private WebView renderView;
     @FXML private Button SaveButton;
-    @FXML private Button RefreshButton;
     @FXML private BorderPane BoxEditor;
     @FXML private BorderPane BoxRender;
-    @FXML private Button FullScreeen;
     private CustomStyledClassedTextArea SourceText;
     public final static Pattern recognizeNumber = Pattern.compile("^(\\s*)([\\d][\\.]) (\\s*)(.*)");
     public final static Pattern recognizeBullet = Pattern.compile("^(\\s*)([*|-]) (\\s*)(.*)");
@@ -103,29 +91,35 @@ public class MdConvertController {
         super();
         logger = LoggerFactory.getLogger(MdConvertController.class);
         SourceText = new CustomStyledClassedTextArea();
+        SourceText.setId("editor");
     }
 
     public MdTextController getMdBox() {
         return mdBox;
     }
 
+    public StyleClassedTextArea getSourceText(){
+        return SourceText;
+    }
+
     public void setMdBox(MdTextController mdBox, Textual extract, Tab tab) throws IOException {
         this.mainApp = mdBox.getMainApp();
-        this.config = mainApp.getConfig();
         this.mdBox = mdBox;
         this.tab = tab;
         this.extract = extract;
 
+        mainApp.getPluginsManager().setPluginEditor(this);
+
         FXMLLoader loader = new CustomFXMLLoader(MainApp.class.getResource("fxml/Editor.fxml"));
         loader.load();
 
-        if(mainApp.getConfig().getEditorToolbarView().equals("no")){
+        if(MainApp.getConfig().getEditorToolbarView().equals("no")){
             BoxEditor.setTop(null);
             BoxRender.setTop(null);
         }
 
         BoxEditor.setCenter(SourceText);
-        SourceText.setStyle("-fx-font-family: \"" + config.getEditorFont() + "\";-fx-font-size: " + config.getEditorFontsize() + ";");
+        SourceText.setStyle("-fx-font-family: \"" + MainApp.getConfig().getEditorFont() + "\";-fx-font-size: " + MainApp.getConfig().getEditorFontsize() + ";");
         initRenderTask();
         Platform.runLater(() -> {
             SourceText.replaceText(extract.getMarkdown());
@@ -168,7 +162,7 @@ public class MdConvertController {
             EventHandlerHelper.install(SourceText.onKeyPressedProperty(),
                     EventHandlerHelper.on(keyPressed(KeyCode.Q, SHORTCUT_DOWN)).act( ev -> SourceText.selectAll()).create());
         }
-        if(config.getEditorSmart().booleanValue()) {
+        if(MainApp.getConfig().getEditorSmart().booleanValue()) {
             EventHandlerHelper.install(SourceText.onKeyReleasedProperty(),
                     EventHandlerHelper.on(keyReleased(KeyCode.TAB)).act(ev -> HandleSmartTab()).create());
             EventHandlerHelper.install(SourceText.onKeyReleasedProperty(),
@@ -283,28 +277,17 @@ public class MdConvertController {
     @FXML private void HandleImgButtonAction(ActionEvent event) {
         FXMLLoader loader = new CustomFXMLLoader(MainApp.class.getResource("fxml/ImageInput.fxml"));
 
-        try{
-            BorderPane imageDialog = loader.load();
-            ImageInputDialog imageController = loader.getController();
-            if(mainApp.getContents().size() > 0) {
-                imageController.setSourceText(SourceText, mainApp.getZdsutils(), mainApp.getMenuController(), mainApp.getContents().get(0));
-            } else {
-                imageController.setSourceText(SourceText, mainApp.getZdsutils(), mainApp.getMenuController(), null);
-            }
+        Stage dialogStage = new CustomStage(loader, "Ajouter une image");
 
-            Stage dialogStage = new Stage();
-            imageController.setStage(dialogStage);
-            dialogStage.setTitle("Ajouter une image");
-
-            Scene scene = new Scene(imageDialog);
-            dialogStage.setScene(scene);
-            dialogStage.getIcons().add(new Image(MainApp.class.getResourceAsStream("assets/static/icons/logo.png")));
-            dialogStage.initModality(Modality.APPLICATION_MODAL);
-
-            dialogStage.show();
-        }catch(IOException e){
-            logger.error(e.getMessage(), e);
+        ImageInputDialog imageController = loader.getController();
+        if(mainApp.getContents().size() > 0) {
+            imageController.setSourceText(SourceText, MainApp.getZdsutils(), mainApp.getMenuController(), mainApp.getContents().get(0));
+        } else {
+            imageController.setSourceText(SourceText, MainApp.getZdsutils(), mainApp.getMenuController(), null);
         }
+        imageController.setStage(dialogStage);
+
+        dialogStage.show();
     }
     @FXML private void HandleBulletButtonAction(ActionEvent event) {
         if(SourceText.getSelectedText().isEmpty()){
@@ -561,7 +544,7 @@ public class MdConvertController {
         before.append("/js/katex/katex.min.js\"></script>");
         before.append("<script src=\"").append(MainApp.class.getResource("assets/static").toExternalForm());
         before.append("/js/katex/contrib/auto-render.min.js\"></script>");
-        before.append("<style type='text/css'>.baseline-fix {font-size: 0px;}</style></head><body>");
+        before.append("<style type='text/css'>.baseline-fix {font-size: 0px;} .fontsize-ensurer span {display:none;}</style></head><body>");
 
         after.append("<script>"+
                 "renderMathInElement("+
@@ -721,32 +704,16 @@ public class MdConvertController {
     @FXML private void HandleFindReplaceDialog(){
         FXMLLoader loader = new CustomFXMLLoader(MainApp.class.getResource("fxml/FindReplaceDialog.fxml"));
 
-        try{
-            AnchorPane optionsDialog = loader.load();
+        Stage dialogStage = new CustomStage(loader, Configuration.bundle.getString("ui.dialog.find.title"));
+        dialogStage.setTitle(Configuration.bundle.getString("ui.dialog.find.title"));
+        dialogStage.setResizable(false);
 
-            Stage dialogStage = new Stage();
-            dialogStage.setTitle(Configuration.bundle.getString("ui.dialog.find.title"));
+        FindReplaceDialog findReplaceDialog = loader.getController();
+        findReplaceDialog.setMainApp(mainApp);
+        findReplaceDialog.setWindow(dialogStage);
+        findReplaceDialog.setMdConvertController(this);
 
-            Scene scene = new Scene(optionsDialog);
-            dialogStage.setScene(scene);
-            dialogStage.getIcons().add(new Image(MainApp.class.getResourceAsStream("assets/static/icons/logo.png")));
-            dialogStage.setResizable(false);
-            dialogStage.initModality(Modality.APPLICATION_MODAL);
-
-            FindReplaceDialog findReplaceDialog = loader.getController();
-            findReplaceDialog.setMainApp(mainApp);
-            findReplaceDialog.setWindow(dialogStage);
-            findReplaceDialog.setMdConvertController(this);
-
-            dialogStage.show();
-        }catch(IOException e){
-            logger.error(e.getMessage(), e);
-        }
-    }
-
-
-    public StyleClassedTextArea getSourceText(){
-        return SourceText;
+        dialogStage.show();
     }
 
     /**

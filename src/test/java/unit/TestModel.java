@@ -1,6 +1,7 @@
-
+package unit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -8,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.function.Function;
 
+import integration.util.Configuration;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -46,7 +48,7 @@ public class TestModel {
     @Before
     public void setUp() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        File manifest = new File(getClass().getResource("fixtures").getFile()+File.separator+"le-guide-du-contributeur"+File.separator+"manifest.json");
+        File manifest = new File(Configuration.getPathFixtureLeGuideDuContributeur() + File.separator+"manifest.json");
         content = mapper.readValue(manifest, Content.class);
         content.setRootContent(content, manifest.getParentFile().getAbsolutePath());
     }
@@ -182,6 +184,7 @@ public class TestModel {
         if(!workspace.exists()) {
             workspace.mkdirs();
         }
+        System.out.println("workspace = "+workspace.getAbsolutePath());
         String title = "Tutoriel de test";
         String description = "Description d'un tutoriel de test";
         String part_1_title = "Première partie";
@@ -245,6 +248,13 @@ public class TestModel {
             extract_21.loadMarkdown();
             assertEquals(extract_21.getMarkdown().trim(), "My new content");
 
+            // rename content
+            bigtuto.renameTitle("Nouveau Contenu");
+            assertEquals(bigtuto.getSlug(), "nouveau-contenu");
+            assertEquals(bigtuto.getTitle(), "Nouveau Contenu");
+            assertEquals(bigtuto.getFilePath(), workspace.getAbsolutePath()+File.separator+"nouveau-contenu");
+            assertTrue((new File(bigtuto.getFilePath())).exists());
+
             part_2.delete();
             assertEquals((new File(part_2.getFilePath())).exists(), false);
             extract111.delete();
@@ -253,8 +263,8 @@ public class TestModel {
             assertEquals((new File(chapter_12.getFilePath())).exists(), false);
             bigtuto.delete();
             assertEquals((new File(bigtuto.getFilePath())).exists(), false);
+
         } catch (IOException e) {
-            // TODO Auto-generated catch block
             e.printStackTrace();
         } finally {
             workspace.delete();

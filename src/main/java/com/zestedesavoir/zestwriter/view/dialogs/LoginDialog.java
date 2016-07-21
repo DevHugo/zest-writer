@@ -12,12 +12,10 @@ import javafx.util.Pair;
 
 public class LoginDialog extends BaseDialog<Pair<String, String>> {
     private Configuration config;
-    private MainApp mainApp;
 
-	public LoginDialog(Button googleButton, MainApp mainApp) {
+	public LoginDialog(Button googleButton) {
 		super(Configuration.bundle.getString("ui.dialog.auth.title"), Configuration.bundle.getString("ui.dialog.auth.header"));
-        this.mainApp = mainApp;
-        this.config = this.mainApp.getConfig();
+        this.config = MainApp.getConfig();
 
         this.setGraphic(IconFactory.createLoginIcon());
 
@@ -26,8 +24,10 @@ public class LoginDialog extends BaseDialog<Pair<String, String>> {
         this.getDialogPane().getButtonTypes().addAll(loginButtonType, ButtonType.CANCEL);
 
         TextField username = new TextField();
+        username.setId("username");
         username.setPromptText("username");
         PasswordField password = new PasswordField();
+        password.setId("password");
         password.setPromptText("password");
         CheckBox keepConnection = new CheckBox(Configuration.bundle.getString("ui.dialog.auth.stay"));
 

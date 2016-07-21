@@ -2,6 +2,7 @@ package com.zestedesavoir.zestwriter;
 
 import com.zestedesavoir.zestwriter.model.Content;
 import com.zestedesavoir.zestwriter.model.Textual;
+import com.zestedesavoir.zestwriter.plugins.PluginsManager;
 import com.zestedesavoir.zestwriter.utils.Configuration;
 import com.zestedesavoir.zestwriter.utils.ZdsHttp;
 import com.zestedesavoir.zestwriter.view.MdTextController;
@@ -35,31 +36,48 @@ import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.swing.*;
+import javax.swing.filechooser.FileSystemView;
+import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 
 public class MainApp extends Application {
+    public static Configuration config;
+    private static Stage primaryStage;
+    private static ZdsHttp zdsutils;
     private Scene scene;
-    private Stage primaryStage;
     private BorderPane rootLayout;
     private ObservableMap<Textual, Tab> extracts = FXCollections.observableMap(new HashMap<>());
     private ObservableList<Content> contents = FXCollections.observableArrayList();
-    private ZdsHttp zdsutils;
     private MdTextController Index;
-    public static Configuration config;
     private StringBuilder key = new StringBuilder();
     private Logger logger;
     private MenuController menuController;
+    private PluginsManager pm;
     public static String[] args;
+    public static File defaultHome;
+
+    public static final int SIZE_WINDOW_MIN_WIDTH = 800;
+    public static final int SIZE_WINDOW_MIN_HEIGHT = 500;
 
     public MainApp() {
         super();
         logger = LoggerFactory.getLogger(MenuController.class);
 
-        if(args.length > 0) {
+        if(args != null && args.length > 0) {
             config = new Configuration(args[0]);
         } else {
-            config = new Configuration(System.getProperty("user.home"));
+            File sample = new File(System.getProperty("user.home"));
+            if(sample.canWrite()) {
+                defaultHome = sample;
+            } else {
+                JFileChooser fr = new JFileChooser();
+                FileSystemView fw = fr.getFileSystemView();
+                defaultHome = fw.getDefaultDirectory();
+            }
+            logger.info("Répertoire Home par defaut : "+defaultHome);
+            config = new Configuration(defaultHome.getAbsolutePath());
         }
         zdsutils = new ZdsHttp(config);
 
@@ -71,12 +89,16 @@ public class MainApp extends Application {
     }
 
 
-    public Configuration getConfig() {
+    public static Configuration getConfig() {
         return config;
     }
 
-    public Stage getPrimaryStage() {
+    public static Stage getPrimaryStage() {
         return primaryStage;
+    }
+
+    public static ZdsHttp getZdsutils() {
+        return zdsutils;
     }
 
     public Scene getScene() {
@@ -91,12 +113,12 @@ public class MainApp extends Application {
         return contents;
     }
 
-    public ZdsHttp getZdsutils() {
-        return zdsutils;
-    }
-
     public ObservableMap<Textual, Tab> getExtracts() {
         return extracts;
+    }
+
+    public PluginsManager getPluginsManager(){
+        return pm;
     }
 
     @Override
@@ -104,41 +126,48 @@ public class MainApp extends Application {
         this.primaryStage = primaryStage;
         this.primaryStage.setTitle("Zest Writer");
         this.primaryStage.getIcons().add(new Image(getClass().getResourceAsStream("assets/static/icons/logo.png")));
+        this.primaryStage.setMinWidth(SIZE_WINDOW_MIN_WIDTH);
+        this.primaryStage.setMinHeight(SIZE_WINDOW_MIN_HEIGHT);
 
         if(config.isDisplayWindowMaximize()){
-            this.primaryStage.setMaximized(true);
+            MainApp.primaryStage.setMaximized(true);
         }else{
             if(config.isDisplayWindowPersonnalDimension()){
-                this.primaryStage.setWidth(config.getDisplayWindowWidth());
-                this.primaryStage.setHeight(config.getDisplayWindowHeight());
+                MainApp.primaryStage.setWidth(config.getDisplayWindowWidth());
+                MainApp.primaryStage.setHeight(config.getDisplayWindowHeight());
             }else{
-                this.primaryStage.setWidth(Double.parseDouble(Configuration.ConfigData.DisplayWindowWidth.getDefaultValue()));
-                this.primaryStage.setHeight(Double.parseDouble(Configuration.ConfigData.DisplayWindowHeight.getDefaultValue()));
+                MainApp.primaryStage.setWidth(Double.parseDouble(Configuration.ConfigData.DisplayWindowWidth.getDefaultValue()));
+                MainApp.primaryStage.setHeight(Double.parseDouble(Configuration.ConfigData.DisplayWindowHeight.getDefaultValue()));
             }
             if(config.isDisplayWindowPersonnalPosition()){
-                this.primaryStage.setX(config.getDisplayWindowPositionX());
-                this.primaryStage.setY(config.getDisplayWindowPositionY());
+                MainApp.primaryStage.setX(config.getDisplayWindowPositionX());
+                MainApp.primaryStage.setY(config.getDisplayWindowPositionY());
             }
         }
 
+        MainApp.primaryStage.setOnCloseRequest(t -> {
+            pm.disablePlugins();
 
-        this.primaryStage.setOnCloseRequest(t -> {
+            if(MainApp.primaryStage.isMaximized() && config.isDisplayWindowPersonnalDimension())
+                config.setDisplayWindowMaximize("true");
+
             quitApp();
             t.consume();
         });
-        this.primaryStage.widthProperty().addListener((observable, oldValue, newValue) -> {
+        MainApp.primaryStage.widthProperty().addListener((observable, oldValue, newValue) -> {
             config.setDisplayWindowWidth(String.valueOf(newValue));
         });
-        this.primaryStage.heightProperty().addListener((observable, oldValue, newValue) -> {
+        MainApp.primaryStage.heightProperty().addListener((observable, oldValue, newValue) -> {
             config.setDisplayWindowHeight(String.valueOf(newValue));
         });
-        this.primaryStage.xProperty().addListener((observable, oldValue, newValue) -> {
+        MainApp.primaryStage.xProperty().addListener((observable, oldValue, newValue) -> {
             config.setDisplayWindowPositionX(String.valueOf(newValue));
         });
-        this.primaryStage.yProperty().addListener((observable, oldValue, newValue) -> {
+        MainApp.primaryStage.yProperty().addListener((observable, oldValue, newValue) -> {
             config.setDisplayWindowPositionY(String.valueOf(newValue));
         });
 
+        initPlugins();
         initRootLayout();
         showWriter();
         initConnection();
@@ -149,7 +178,7 @@ public class MainApp extends Application {
     }
 
     public void quitApp() {
-        if(this.primaryStage.isMaximized() && config.isDisplayWindowPersonnalDimension())
+        if(primaryStage.isMaximized() && config.isDisplayWindowPersonnalDimension())
             config.setDisplayWindowMaximize("true");
         config.saveConfFile();
         if(FunctionTreeFactory.clearContent(getExtracts(), getIndex().getEditorList())) {
@@ -201,7 +230,7 @@ public class MainApp extends Application {
 
     public void initConnection(){
         if(!config.getAuthentificationUsername().isEmpty() && !config.getAuthentificationPassword().isEmpty()){
-            LoginService loginTask = new LoginService(config.getAuthentificationUsername(), config.getAuthentificationPassword(), zdsutils, config);
+            LoginService loginTask = new LoginService(config.getAuthentificationUsername(), config.getAuthentificationPassword());
 
             menuController.getMenuDownload().setDisable(true);
             menuController.gethBottomBox().getChildren().clear();
@@ -233,6 +262,11 @@ public class MainApp extends Application {
 
             loginTask.start();
         }
+    }
+
+    public void initPlugins(){
+        pm = new PluginsManager(this);
+        pm.enablePlugins();
     }
 
     private void loadCombinason() {
